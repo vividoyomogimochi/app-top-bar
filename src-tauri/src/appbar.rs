@@ -11,22 +11,37 @@ pub mod platform {
         SHAppBarMessage, ABM_NEW, ABM_QUERYPOS, ABM_REMOVE, ABM_SETPOS, APPBARDATA,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongW, MoveWindow, SetWindowLongW, SetWindowPos, GWL_EXSTYLE, GWL_STYLE,
-        HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-        WINDOW_EX_STYLE, WINDOW_STYLE, WS_CAPTION, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME,
-        WS_EX_WINDOWEDGE, WS_POPUP, WS_THICKFRAME,
+        GetWindowLongW, GetWindowRect, MoveWindow, SetWindowPos, GWL_EXSTYLE, GWL_STYLE,
+        HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE,
     };
 
+    use std::fmt::Write as FmtWrite;
+    use std::fs;
     use std::mem;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     static REGISTERED: AtomicBool = AtomicBool::new(false);
 
+    fn dump_diag(hwnd: HWND, label: &str, diag: &mut String) {
+        unsafe {
+            let mut wr: RECT = mem::zeroed();
+            let _ = GetWindowRect(hwnd, &mut wr);
+            let style = GetWindowLongW(hwnd, GWL_STYLE);
+            let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+            let _ = writeln!(
+                diag,
+                "[{label}] WindowRect=({},{},{},{}) style=0x{:08X} ex_style=0x{:08X}",
+                wr.left, wr.top, wr.right, wr.bottom, style, ex_style
+            );
+        }
+    }
+
     /// Get monitor info sorted by position (left-to-right, then top-to-bottom)
     /// to match Windows Display Settings ordering.
-    /// Returns Vec of (monitor_rect, is_primary).
-    pub fn enumerate_monitors() -> Vec<(RECT, bool)> {
-        let monitors: std::sync::Mutex<Vec<(RECT, bool)>> = std::sync::Mutex::new(Vec::new());
+    /// Returns Vec of (monitor_rect, work_rect, is_primary).
+    pub fn enumerate_monitors() -> Vec<(RECT, RECT, bool)> {
+        let monitors: std::sync::Mutex<Vec<(RECT, RECT, bool)>> =
+            std::sync::Mutex::new(Vec::new());
 
         unsafe {
             let monitors_ptr = &monitors as *const _ as isize;
@@ -57,60 +72,53 @@ pub mod platform {
         lparam: LPARAM,
     ) -> windows::core::BOOL {
         let monitors =
-            &*(lparam.0 as *const std::sync::Mutex<Vec<(RECT, bool)>>);
+            &*(lparam.0 as *const std::sync::Mutex<Vec<(RECT, RECT, bool)>>);
         let mut info: MONITORINFO = mem::zeroed();
         info.cbSize = mem::size_of::<MONITORINFO>() as u32;
         if GetMonitorInfoW(hmonitor, &mut info).as_bool() {
             let is_primary = (info.dwFlags & 1) != 0; // MONITORINFOF_PRIMARY
             if let Ok(mut m) = monitors.lock() {
-                m.push((info.rcMonitor, is_primary));
+                m.push((info.rcMonitor, info.rcWork, is_primary));
             }
         }
         windows::core::BOOL(1)
     }
 
     /// Register the window as an appbar at the top of the specified monitor.
-    /// Returns the final physical-pixel rect (x, y, width, height) on success.
-    pub fn register_appbar(
-        hwnd: isize,
-        bar_height: u32,
-        monitor_index: u32,
-    ) -> Option<(i32, i32, i32, i32)> {
+    pub fn register_appbar(hwnd: isize, bar_height: u32, monitor_index: u32) -> bool {
+        let mut diag = String::new();
+
         let monitors = enumerate_monitors();
+        for (i, (mon, work, primary)) in monitors.iter().enumerate() {
+            let _ = writeln!(
+                diag,
+                "Monitor[{i}]: rcMonitor=({},{},{},{}) rcWork=({},{},{},{}) primary={}",
+                mon.left, mon.top, mon.right, mon.bottom,
+                work.left, work.top, work.right, work.bottom,
+                primary
+            );
+        }
+
         let monitor_rect = match monitors.get(monitor_index as usize) {
-            Some((rect, _)) => *rect,
+            Some((rect, _, _)) => *rect,
             None => match monitors.first() {
-                Some((rect, _)) => *rect,
-                None => return None,
+                Some((rect, _, _)) => *rect,
+                None => return false,
             },
         };
 
+        let _ = writeln!(
+            diag,
+            "Target: monitor_index={} bar_height={} monitor_rect=({},{},{},{})",
+            monitor_index, bar_height,
+            monitor_rect.left, monitor_rect.top, monitor_rect.right, monitor_rect.bottom
+        );
+
         let hwnd = HWND(hwnd as *mut _);
 
+        dump_diag(hwnd, "before_register", &mut diag);
+
         unsafe {
-            // Strip frame styles that WRY leaves on even with decorations(false).
-            // WS_THICKFRAME / WS_CAPTION cause an invisible border that offsets
-            // the window position on first show.
-            let style = WINDOW_STYLE(GetWindowLongW(hwnd, GWL_STYLE) as u32);
-            let new_style = (style & !(WS_THICKFRAME | WS_CAPTION)) | WS_POPUP;
-            SetWindowLongW(hwnd, GWL_STYLE, new_style.0 as i32);
-
-            let ex_style = WINDOW_EX_STYLE(GetWindowLongW(hwnd, GWL_EXSTYLE) as u32);
-            let new_ex_style =
-                ex_style & !(WS_EX_CLIENTEDGE | WS_EX_WINDOWEDGE | WS_EX_DLGMODALFRAME);
-            SetWindowLongW(hwnd, GWL_EXSTYLE, new_ex_style.0 as i32);
-
-            // Apply style changes before positioning
-            let _ = SetWindowPos(
-                hwnd,
-                None,
-                0,
-                0,
-                0,
-                0,
-                SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
-            );
-
             // Remove previous registration if any
             if REGISTERED.load(Ordering::SeqCst) {
                 unregister_appbar(hwnd.0 as isize);
@@ -124,9 +132,12 @@ pub mod platform {
             let result = SHAppBarMessage(ABM_NEW, &mut abd);
             if result == 0 {
                 log::error!("ABM_NEW failed");
-                return None;
+                let _ = writeln!(diag, "ABM_NEW FAILED");
+                write_diag(&diag);
+                return false;
             }
             REGISTERED.store(true, Ordering::SeqCst);
+            let _ = writeln!(diag, "ABM_NEW ok");
 
             // Query and set position
             abd.uEdge = 1; // ABE_TOP
@@ -137,30 +148,63 @@ pub mod platform {
                 bottom: monitor_rect.top + bar_height as i32,
             };
 
+            let _ = writeln!(
+                diag,
+                "Before QUERYPOS: rc=({},{},{},{})",
+                abd.rc.left, abd.rc.top, abd.rc.right, abd.rc.bottom
+            );
+
             SHAppBarMessage(ABM_QUERYPOS, &mut abd);
+
+            let _ = writeln!(
+                diag,
+                "After QUERYPOS: rc=({},{},{},{})",
+                abd.rc.left, abd.rc.top, abd.rc.right, abd.rc.bottom
+            );
+
             abd.rc.bottom = abd.rc.top + bar_height as i32;
             SHAppBarMessage(ABM_SETPOS, &mut abd);
 
-            let x = abd.rc.left;
-            let y = abd.rc.top;
-            let w = abd.rc.right - abd.rc.left;
-            let h = abd.rc.bottom - abd.rc.top;
+            let _ = writeln!(
+                diag,
+                "After SETPOS: rc=({},{},{},{})",
+                abd.rc.left, abd.rc.top, abd.rc.right, abd.rc.bottom
+            );
 
             // Move the actual window to match
-            let _ = MoveWindow(hwnd, x, y, w, h, true);
+            let _ = MoveWindow(
+                hwnd,
+                abd.rc.left,
+                abd.rc.top,
+                abd.rc.right - abd.rc.left,
+                abd.rc.bottom - abd.rc.top,
+                true,
+            );
+
+            dump_diag(hwnd, "after_MoveWindow", &mut diag);
 
             // Ensure topmost
             let _ = SetWindowPos(
                 hwnd,
                 Some(HWND_TOPMOST),
-                x,
-                y,
-                w,
-                h,
+                abd.rc.left,
+                abd.rc.top,
+                abd.rc.right - abd.rc.left,
+                abd.rc.bottom - abd.rc.top,
                 SWP_NOACTIVATE | SWP_FRAMECHANGED,
             );
 
-            Some((x, y, w, h))
+            dump_diag(hwnd, "after_SetWindowPos", &mut diag);
+        }
+
+        write_diag(&diag);
+        true
+    }
+
+    fn write_diag(diag: &str) {
+        if let Some(dir) = dirs::config_dir() {
+            let path = dir.join("app-top-bar").join("diag.log");
+            let _ = fs::write(path, diag);
         }
     }
 
@@ -184,17 +228,13 @@ pub mod platform {
 #[cfg(not(windows))]
 pub mod platform {
     /// Stub for non-Windows platforms.
-    pub fn enumerate_monitors() -> Vec<((i32, i32, i32, i32), bool)> {
-        vec![((0, 0, 1920, 1080), true)]
+    pub fn enumerate_monitors() -> Vec<((i32, i32, i32, i32), (i32, i32, i32, i32), bool)> {
+        vec![((0, 0, 1920, 1080), (0, 0, 1920, 1040), true)]
     }
 
-    pub fn register_appbar(
-        _hwnd: isize,
-        _bar_height: u32,
-        _monitor_index: u32,
-    ) -> Option<(i32, i32, i32, i32)> {
+    pub fn register_appbar(_hwnd: isize, _bar_height: u32, _monitor_index: u32) -> bool {
         log::warn!("AppBar API is only available on Windows");
-        None
+        false
     }
 
     pub fn unregister_appbar(_hwnd: isize) {}
