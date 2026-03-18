@@ -3,7 +3,7 @@
 /// This reserves screen space so other maximized windows won't overlap.
 #[cfg(windows)]
 pub mod platform {
-    use windows::Win32::Foundation::{HWND, LPARAM, RECT};
+    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
     use windows::Win32::Graphics::Gdi::{
         EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
     };
@@ -11,18 +11,86 @@ pub mod platform {
         SHAppBarMessage, ABM_NEW, ABM_QUERYPOS, ABM_REMOVE, ABM_SETPOS, APPBARDATA,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowRect, MoveWindow, SetWindowPos, HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+        CallWindowProcW, GetWindowLongPtrW, GetWindowRect, MoveWindow, SetWindowLongPtrW,
+        SetWindowPos, ShowWindow, HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SW_HIDE,
+        SW_SHOWNOACTIVATE, WNDPROC, GWL_WNDPROC,
     };
 
     use std::mem;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Mutex;
 
+    /// Custom message ID for appbar notifications (WM_USER + 100).
+    const WM_APPBAR_CALLBACK: u32 = 0x0464;
+    /// ABN_FULLSCREENAPP notification code.
+    const ABN_FULLSCREENAPP: u32 = 2;
+
     static REGISTERED: AtomicBool = AtomicBool::new(false);
+    /// Whether the window is currently hidden due to a fullscreen app.
+    static HIDDEN_FOR_FULLSCREEN: AtomicBool = AtomicBool::new(false);
+    /// Whether auto-hide on fullscreen is enabled.
+    static AUTO_HIDE_ENABLED: AtomicBool = AtomicBool::new(true);
+    /// Original window procedure before subclassing.
+    static ORIGINAL_WNDPROC: Mutex<isize> = Mutex::new(0);
+    /// The appbar window handle, stored for use by set_auto_hide.
+    static APPBAR_HWND: Mutex<isize> = Mutex::new(0);
 
     /// The expected physical-pixel rect for the appbar window.
     /// Set during registration, used by correct_position to snap back.
     static EXPECTED_RECT: Mutex<Option<RECT>> = Mutex::new(None);
+
+    /// Window procedure that intercepts appbar callback messages.
+    unsafe extern "system" fn appbar_wndproc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        if msg == WM_APPBAR_CALLBACK && wparam.0 as u32 == ABN_FULLSCREENAPP {
+            if AUTO_HIDE_ENABLED.load(Ordering::SeqCst) {
+                let entering_fullscreen = lparam.0 != 0;
+                if entering_fullscreen {
+                    let _ = ShowWindow(hwnd, SW_HIDE);
+                    HIDDEN_FOR_FULLSCREEN.store(true, Ordering::SeqCst);
+                } else if HIDDEN_FOR_FULLSCREEN.load(Ordering::SeqCst) {
+                    let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+                    HIDDEN_FOR_FULLSCREEN.store(false, Ordering::SeqCst);
+                    // Re-ensure topmost position
+                    correct_position(hwnd.0 as isize);
+                }
+            }
+            return LRESULT(0);
+        }
+
+        let original = ORIGINAL_WNDPROC.lock().ok().map(|w| *w).unwrap_or(0);
+        if original != 0 {
+            let proc: WNDPROC = mem::transmute(original);
+            return CallWindowProcW(proc, hwnd, msg, wparam, lparam);
+        }
+        windows::Win32::UI::WindowsAndMessaging::DefWindowProcW(hwnd, msg, wparam, lparam)
+    }
+
+    /// Set whether auto-hide on fullscreen is enabled.
+    pub fn set_auto_hide(enabled: bool) {
+        AUTO_HIDE_ENABLED.store(enabled, Ordering::SeqCst);
+        // If disabling and currently hidden, show the window back
+        if !enabled && HIDDEN_FOR_FULLSCREEN.load(Ordering::SeqCst) {
+            HIDDEN_FOR_FULLSCREEN.store(false, Ordering::SeqCst);
+            let hwnd_val = APPBAR_HWND.lock().ok().map(|h| *h).unwrap_or(0);
+            if hwnd_val != 0 {
+                let hwnd = HWND(hwnd_val as *mut _);
+                unsafe {
+                    let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+                }
+                correct_position(hwnd_val);
+            }
+        }
+    }
+
+    /// Returns whether auto-hide on fullscreen is enabled.
+    pub fn is_auto_hide_enabled() -> bool {
+        AUTO_HIDE_ENABLED.load(Ordering::SeqCst)
+    }
 
     /// Get monitor info sorted by position (left-to-right, then top-to-bottom)
     /// to match Windows Display Settings ordering.
@@ -93,6 +161,7 @@ pub mod platform {
             let mut abd: APPBARDATA = mem::zeroed();
             abd.cbSize = mem::size_of::<APPBARDATA>() as u32;
             abd.hWnd = hwnd;
+            abd.uCallbackMessage = WM_APPBAR_CALLBACK;
 
             // Register new appbar
             let result = SHAppBarMessage(ABM_NEW, &mut abd);
@@ -101,6 +170,21 @@ pub mod platform {
                 return false;
             }
             REGISTERED.store(true, Ordering::SeqCst);
+
+            // Store hwnd for set_auto_hide
+            if let Ok(mut h) = APPBAR_HWND.lock() {
+                *h = hwnd.0 as isize;
+            }
+
+            // Subclass the window to receive appbar notifications
+            {
+                let mut orig = ORIGINAL_WNDPROC.lock().unwrap();
+                if *orig == 0 {
+                    let prev = GetWindowLongPtrW(hwnd, GWL_WNDPROC);
+                    *orig = prev;
+                    SetWindowLongPtrW(hwnd, GWL_WNDPROC, appbar_wndproc as isize);
+                }
+            }
 
             // Query and set position
             abd.uEdge = 1; // ABE_TOP
@@ -189,15 +273,28 @@ pub mod platform {
 
         let hwnd = HWND(hwnd as *mut _);
         unsafe {
+            // Restore original window procedure
+            {
+                let mut orig = ORIGINAL_WNDPROC.lock().unwrap();
+                if *orig != 0 {
+                    SetWindowLongPtrW(hwnd, GWL_WNDPROC, *orig);
+                    *orig = 0;
+                }
+            }
+
             let mut abd: APPBARDATA = mem::zeroed();
             abd.cbSize = mem::size_of::<APPBARDATA>() as u32;
             abd.hWnd = hwnd;
             SHAppBarMessage(ABM_REMOVE, &mut abd);
         }
         REGISTERED.store(false, Ordering::SeqCst);
+        HIDDEN_FOR_FULLSCREEN.store(false, Ordering::SeqCst);
 
         if let Ok(mut expected) = EXPECTED_RECT.lock() {
             *expected = None;
+        }
+        if let Ok(mut h) = APPBAR_HWND.lock() {
+            *h = 0;
         }
     }
 }
@@ -217,4 +314,10 @@ pub mod platform {
     pub fn correct_position(_hwnd: isize) {}
 
     pub fn unregister_appbar(_hwnd: isize) {}
+
+    pub fn set_auto_hide(_enabled: bool) {}
+
+    pub fn is_auto_hide_enabled() -> bool {
+        false
+    }
 }

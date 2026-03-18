@@ -13,6 +13,8 @@ pub struct AppConfig {
     pub auto_start: bool,
     #[serde(default = "default_url")]
     pub url: String,
+    #[serde(default = "default_true")]
+    pub auto_hide_fullscreen: bool,
 }
 
 fn default_bar_height() -> u32 {
@@ -32,6 +34,7 @@ impl Default for AppConfig {
             monitor: 0,
             auto_start: true,
             url: default_url(),
+            auto_hide_fullscreen: true,
         }
     }
 }

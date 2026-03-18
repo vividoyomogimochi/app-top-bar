@@ -15,6 +15,7 @@ pub struct TrayMenuItems {
     monitor_items: Vec<CheckMenuItem<tauri::Wry>>,
     height_items: Vec<CheckMenuItem<tauri::Wry>>,
     autostart_item: CheckMenuItem<tauri::Wry>,
+    auto_hide_item: CheckMenuItem<tauri::Wry>,
 }
 
 /// Update check marks on monitor and height items to reflect current config.
@@ -34,6 +35,7 @@ fn update_check_states(app: &AppHandle) {
         let _ = item.set_checked(HEIGHTS[i] == config.bar_height);
     }
     let _ = items.autostart_item.set_checked(config.auto_start);
+    let _ = items.auto_hide_item.set_checked(config.auto_hide_fullscreen);
 }
 
 pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
@@ -91,19 +93,33 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         None::<&str>,
     )?;
 
+    // Auto-hide on fullscreen toggle
+    let auto_hide_item = CheckMenuItem::with_id(
+        app,
+        "auto_hide_fullscreen",
+        "Auto-hide on Fullscreen",
+        true,
+        config.auto_hide_fullscreen,
+        None::<&str>,
+    )?;
+
     let set_url_item = MenuItem::with_id(app, "set_url", "Set URL...", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
     let menu = Menu::with_items(
         app,
-        &[&monitor_sub, &height_sub, &autostart_item, &set_url_item, &quit_item],
+        &[&monitor_sub, &height_sub, &autostart_item, &auto_hide_item, &set_url_item, &quit_item],
     )?;
 
     // Store item references for later check-state updates
+    // Sync auto-hide setting to appbar module
+    platform::set_auto_hide(config.auto_hide_fullscreen);
+
     app.manage(Mutex::new(TrayMenuItems {
         monitor_items,
         height_items,
         autostart_item,
+        auto_hide_item,
     }));
 
     TrayIconBuilder::with_id("main-tray")
@@ -172,6 +188,19 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                         let _ = autostart.disable();
                     }
                 }
+                update_check_states(app);
+                return;
+            }
+
+            if id == "auto_hide_fullscreen" {
+                let new_state = {
+                    let state = app.state::<ConfigState>();
+                    let mut cfg = state.0.lock().unwrap();
+                    cfg.auto_hide_fullscreen = !cfg.auto_hide_fullscreen;
+                    config::save_config(&cfg);
+                    cfg.auto_hide_fullscreen
+                };
+                platform::set_auto_hide(new_state);
                 update_check_states(app);
                 return;
             }
