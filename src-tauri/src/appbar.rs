@@ -11,8 +11,8 @@ pub mod platform {
         SHAppBarMessage, ABM_NEW, ABM_QUERYPOS, ABM_REMOVE, ABM_SETPOS, APPBARDATA,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongW, GetWindowRect, MoveWindow, SetWindowPos, GWL_EXSTYLE, GWL_STYLE,
-        HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+        GetClientRect, GetWindowLongW, GetWindowRect, MoveWindow, SetWindowPos, GWL_EXSTYLE,
+        GWL_STYLE, HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE,
     };
 
     use std::fmt::Write as FmtWrite;
@@ -26,12 +26,16 @@ pub mod platform {
         unsafe {
             let mut wr: RECT = mem::zeroed();
             let _ = GetWindowRect(hwnd, &mut wr);
+            let mut cr: RECT = mem::zeroed();
+            let _ = GetClientRect(hwnd, &mut cr);
             let style = GetWindowLongW(hwnd, GWL_STYLE);
             let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
             let _ = writeln!(
                 diag,
-                "[{label}] WindowRect=({},{},{},{}) style=0x{:08X} ex_style=0x{:08X}",
-                wr.left, wr.top, wr.right, wr.bottom, style, ex_style
+                "[{label}] WindowRect=({},{},{},{}) ClientRect=({},{},{},{}) style=0x{:08X} ex_style=0x{:08X}",
+                wr.left, wr.top, wr.right, wr.bottom,
+                cr.left, cr.top, cr.right, cr.bottom,
+                style, ex_style
             );
         }
     }
@@ -198,6 +202,19 @@ pub mod platform {
         }
 
         write_diag(&diag);
+
+        // Delayed re-check: something may move the window after setup() returns
+        let hwnd_raw = hwnd.0 as isize;
+        std::thread::spawn(move || {
+            for delay_ms in [500, 2000] {
+                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                let hwnd = HWND(hwnd_raw as *mut _);
+                let mut delayed = String::new();
+                dump_diag(hwnd, &format!("delayed_{}ms", delay_ms), &mut delayed);
+                append_diag(&delayed);
+            }
+        });
+
         true
     }
 
@@ -205,6 +222,16 @@ pub mod platform {
         if let Some(dir) = dirs::config_dir() {
             let path = dir.join("app-top-bar").join("diag.log");
             let _ = fs::write(path, diag);
+        }
+    }
+
+    fn append_diag(diag: &str) {
+        if let Some(dir) = dirs::config_dir() {
+            let path = dir.join("app-top-bar").join("diag.log");
+            use std::io::Write;
+            if let Ok(mut f) = fs::OpenOptions::new().append(true).open(&path) {
+                let _ = f.write_all(diag.as_bytes());
+            }
         }
     }
 
