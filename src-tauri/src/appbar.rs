@@ -67,13 +67,18 @@ pub mod platform {
     }
 
     /// Register the window as an appbar at the top of the specified monitor.
-    pub fn register_appbar(hwnd: isize, bar_height: u32, monitor_index: u32) -> bool {
+    /// Returns the final physical-pixel rect (x, y, width, height) on success.
+    pub fn register_appbar(
+        hwnd: isize,
+        bar_height: u32,
+        monitor_index: u32,
+    ) -> Option<(i32, i32, i32, i32)> {
         let monitors = enumerate_monitors();
         let monitor_rect = match monitors.get(monitor_index as usize) {
             Some((rect, _)) => *rect,
             None => match monitors.first() {
                 Some((rect, _)) => *rect,
-                None => return false,
+                None => return None,
             },
         };
 
@@ -93,7 +98,7 @@ pub mod platform {
             let result = SHAppBarMessage(ABM_NEW, &mut abd);
             if result == 0 {
                 log::error!("ABM_NEW failed");
-                return false;
+                return None;
             }
             REGISTERED.store(true, Ordering::SeqCst);
 
@@ -110,29 +115,27 @@ pub mod platform {
             abd.rc.bottom = abd.rc.top + bar_height as i32;
             SHAppBarMessage(ABM_SETPOS, &mut abd);
 
+            let x = abd.rc.left;
+            let y = abd.rc.top;
+            let w = abd.rc.right - abd.rc.left;
+            let h = abd.rc.bottom - abd.rc.top;
+
             // Move the actual window to match
-            let _ = MoveWindow(
-                hwnd,
-                abd.rc.left,
-                abd.rc.top,
-                abd.rc.right - abd.rc.left,
-                abd.rc.bottom - abd.rc.top,
-                true,
-            );
+            let _ = MoveWindow(hwnd, x, y, w, h, true);
 
             // Ensure topmost
             let _ = SetWindowPos(
                 hwnd,
                 Some(HWND_TOPMOST),
-                abd.rc.left,
-                abd.rc.top,
-                abd.rc.right - abd.rc.left,
-                abd.rc.bottom - abd.rc.top,
+                x,
+                y,
+                w,
+                h,
                 SWP_NOACTIVATE | SWP_FRAMECHANGED,
             );
-        }
 
-        true
+            Some((x, y, w, h))
+        }
     }
 
     /// Unregister the appbar, releasing the reserved screen space.
@@ -159,9 +162,13 @@ pub mod platform {
         vec![((0, 0, 1920, 1080), true)]
     }
 
-    pub fn register_appbar(_hwnd: isize, _bar_height: u32, _monitor_index: u32) -> bool {
+    pub fn register_appbar(
+        _hwnd: isize,
+        _bar_height: u32,
+        _monitor_index: u32,
+    ) -> Option<(i32, i32, i32, i32)> {
         log::warn!("AppBar API is only available on Windows");
-        false
+        None
     }
 
     pub fn unregister_appbar(_hwnd: isize) {}

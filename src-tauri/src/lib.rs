@@ -4,7 +4,7 @@ mod tray;
 
 use config::{ConfigState, load_config};
 use std::sync::Mutex;
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::MacosLauncher;
 
 const SCROLLBAR_HIDE_SCRIPT: &str = r#"
@@ -67,19 +67,24 @@ pub fn run() {
             // Setup system tray
             tray::setup_tray(&handle)?;
 
-            // On Windows, register the appbar then show the window
+            // On Windows, register the appbar then sync Tauri's position state
             #[cfg(windows)]
             {
                 if let Ok(hwnd) = window.hwnd() {
-                    appbar::platform::register_appbar(
+                    if let Some((x, y, w, h)) = appbar::platform::register_appbar(
                         hwnd.0 as isize,
                         config.bar_height,
                         config.monitor,
-                    );
+                    ) {
+                        // Sync Tauri's internal position/size with the appbar's
+                        // physical-pixel rect so show() won't revert to (0,0)
+                        let _ = window.set_position(PhysicalPosition::new(x, y));
+                        let _ = window.set_size(PhysicalSize::new(w as u32, h as u32));
+                    }
                 }
             }
 
-            // Show window after appbar registration to avoid initial position flicker
+            // Show window after position is fully resolved
             window.show()?;
 
             // Sync autostart registry with config
