@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Settings</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: #1e1e2e; color: #cdd6f4;
+    padding: 16px; display: flex; flex-direction: column; height: 100vh;
+  }
+  label { font-size: 13px; margin-bottom: 6px; display: block; }
+  input[type="url"] {
+    width: 100%; padding: 8px 10px; border: 1px solid #45475a;
+    border-radius: 6px; background: #313244; color: #cdd6f4;
+    font-size: 13px; outline: none;
+  }
+  input[type="url"]:focus { border-color: #89b4fa; }
+  .buttons { margin-top: auto; display: flex; gap: 8px; justify-content: flex-end; }
+  button {
+    padding: 6px 18px; border: none; border-radius: 6px;
+    font-size: 13px; cursor: pointer;
+  }
+  .btn-save { background: #89b4fa; color: #1e1e2e; font-weight: 600; }
+  .btn-save:hover { background: #74c7ec; }
+  .btn-cancel { background: #45475a; color: #cdd6f4; }
+  .btn-cancel:hover { background: #585b70; }
+  .error { color: #f38ba8; font-size: 12px; margin-top: 4px; display: none; }
+</style>
+</head>
+<body>
+  <label for="url-input">URL</label>
+  <input type="url" id="url-input" placeholder="https://example.com/" spellcheck="false">
+  <div class="error" id="error-msg">Please enter a valid URL.</div>
+  <div class="buttons">
+    <button class="btn-cancel" id="btn-cancel">Cancel</button>
+    <button class="btn-save" id="btn-save">Save</button>
+  </div>
+<script>
+  const invoke = window.__TAURI_INTERNALS__.invoke;
+  const urlInput = document.getElementById('url-input');
+  const errorMsg = document.getElementById('error-msg');
+
+  invoke('get_url').then(url => { urlInput.value = url; });
+
+  document.getElementById('btn-save').addEventListener('click', async () => {
+    const url = urlInput.value.trim();
+    if (!url) { errorMsg.style.display = 'block'; return; }
+    try { new URL(url); } catch { errorMsg.style.display = 'block'; return; }
+    errorMsg.style.display = 'none';
+    await invoke('set_url', { url });
+    invoke('close_settings_window');
+  });
+
+  document.getElementById('btn-cancel').addEventListener('click', () => {
+    invoke('close_settings_window');
+  });
+
+  urlInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('btn-save').click();
+    if (e.key === 'Escape') document.getElementById('btn-cancel').click();
+  });
+</script>
+</body>
+</html>

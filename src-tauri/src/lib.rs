@@ -7,6 +7,32 @@ use std::sync::Mutex;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::MacosLauncher;
 
+#[tauri::command]
+fn get_url(state: tauri::State<'_, ConfigState>) -> String {
+    state.0.lock().unwrap().url.clone()
+}
+
+#[tauri::command]
+fn set_url(app: tauri::AppHandle, state: tauri::State<'_, ConfigState>, url: String) {
+    {
+        let mut cfg = state.0.lock().unwrap();
+        cfg.url = url.clone();
+        config::save_config(&cfg);
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        if let Ok(parsed) = url.parse::<url::Url>() {
+            let _ = window.navigate(parsed);
+        }
+    }
+}
+
+#[tauri::command]
+fn close_settings_window(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.close();
+    }
+}
+
 const SCROLLBAR_HIDE_SCRIPT: &str = r#"
 (function() {
     const style = document.createElement('style');
@@ -31,6 +57,7 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             None,
         ))
+        .invoke_handler(tauri::generate_handler![get_url, set_url, close_settings_window])
         .manage(ConfigState(Mutex::new(cfg)))
         .setup(|app| {
             let handle = app.handle().clone();

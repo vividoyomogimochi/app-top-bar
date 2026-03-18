@@ -2,7 +2,7 @@ use std::sync::Mutex;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, Submenu},
     tray::TrayIconBuilder,
-    AppHandle, Manager,
+    AppHandle, Manager, WebviewUrl, WebviewWindowBuilder,
 };
 
 use crate::appbar::platform;
@@ -91,11 +91,12 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         None::<&str>,
     )?;
 
+    let set_url_item = MenuItem::with_id(app, "set_url", "Set URL...", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
     let menu = Menu::with_items(
         app,
-        &[&monitor_sub, &height_sub, &autostart_item, &quit_item],
+        &[&monitor_sub, &height_sub, &autostart_item, &set_url_item, &quit_item],
     )?;
 
     // Store item references for later check-state updates
@@ -123,6 +124,25 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                     let _ = window;
                 }
                 app.exit(0);
+                return;
+            }
+
+            if id == "set_url" {
+                // Focus existing settings window or create a new one
+                if let Some(window) = app.get_webview_window("settings") {
+                    let _ = window.set_focus();
+                } else {
+                    let _ = WebviewWindowBuilder::new(
+                        app,
+                        "settings",
+                        WebviewUrl::App("settings.html".into()),
+                    )
+                    .title("Set URL")
+                    .inner_size(420.0, 130.0)
+                    .resizable(false)
+                    .center()
+                    .build();
+                }
                 return;
             }
 
