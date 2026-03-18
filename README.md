@@ -1,38 +1,39 @@
 # LED AppBar
 
-Windows desktop top bar that displays a web page (LED news ticker) at the top edge of the screen, reserving work area so maximized windows stay below it — just like the taskbar.
+Windows のデスクトップ上端に常駐する LED ニュースティッカーウィジェット。
+画面の作業領域を予約するため、他のウィンドウを最大化してもバーの下に収まる。
 
-## Features
+## 機能
 
-- Displays any URL in a frameless, always-on-top WebView2 window
-- Reserves screen space via Windows AppBar API (`SHAppBarNotify`)
-- System tray with monitor selection, bar height presets, and auto-start toggle
-- Persistent configuration saved to `%APPDATA%/app-top-bar/config.json`
-- Auto-start on Windows login (registry-based)
-- Multi-monitor support with saved preference
+- **画面上端に常駐表示** — 枠なし・最前面・タスクバー非表示
+- **作業領域の予約** — Windows AppBar API (`SHAppBarNotify`) でタスクバーと同じ仕組みで画面端を確保
+- **マルチモニタ対応** — トレイメニューからモニタを切り替え可能（設定は保存される）
+- **バー高さ変更** — 40 / 60 / 80 / 100 / 120px から選択
+- **自動起動** — Windows 起動時に自動実行（レジストリ Run キー）
+- **システムトレイ** — モニタ選択・高さ変更・自動起動・終了
 
-## Quick Start
+## 表示コンテンツ
 
-### Prerequisites
+[https://ticker.samoyed.moe/ticker/](https://ticker.samoyed.moe/ticker/) を WebView2 で表示する。
+Canvas ベースの LED ドットマトリクス風ニュースティッカー。
 
-- [Node.js](https://nodejs.org/) (v18+)
-- [Rust](https://rustup.rs/)
-- [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/) with "C++ desktop development" workload
-- WebView2 Runtime (pre-installed on Windows 10/11)
+## 必要環境
 
-### Build & Run
+- Windows 10 / 11
+- WebView2 Runtime（Windows 10/11 ならプリインストール済み）
+
+## ビルド
 
 ```powershell
-git clone https://github.com/vividoyomogimochi/app-top-bar.git
-cd app-top-bar
+# 前提: Node.js, Rust, Visual Studio Build Tools (C++) が必要
 npm install
-npm run tauri dev      # development
-npm run tauri build    # release (outputs MSI + NSIS installer)
+npm run tauri dev    # 開発モード
+npm run tauri build  # リリースビルド（MSI/NSIS生成）
 ```
 
-## Configuration
+## 設定ファイル
 
-Settings are stored in `%APPDATA%/app-top-bar/config.json`:
+`%APPDATA%/app-top-bar/config.json` に保存される。
 
 ```json
 {
@@ -43,19 +44,6 @@ Settings are stored in `%APPDATA%/app-top-bar/config.json`:
 }
 ```
 
-All settings except `url` can be changed from the system tray menu.
+## ライセンス
 
-## System Tray Menu
-
-- **Monitor** — select which display to attach the bar to
-- **Bar Height** — 40 / 60 / 80 / 100 / 120 px
-- **Auto Start** — toggle Windows startup registration
-- **Quit** — unregister AppBar and exit
-
-## Known Issues
-
-- On monitors with a taskbar, the bar may appear with a slight vertical offset on first launch. Changing the bar height from the tray menu corrects it.
-
-## License
-
-MIT - see [LICENSE](LICENSE)
+MIT
