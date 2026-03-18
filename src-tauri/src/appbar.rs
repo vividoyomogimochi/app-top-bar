@@ -78,7 +78,15 @@ pub mod platform {
         };
 
         SHAppBarMessage(ABM_QUERYPOS, abd);
-        abd.rc.bottom = abd.rc.top + bar_height as i32;
+
+        // Force position to the monitor's absolute top edge.
+        // QUERYPOS may shift rc.top down on monitors with a taskbar,
+        // but we always want to sit at the very top.
+        abd.rc.left = monitor_rect.left;
+        abd.rc.top = monitor_rect.top;
+        abd.rc.right = monitor_rect.right;
+        abd.rc.bottom = monitor_rect.top + bar_height as i32;
+
         SHAppBarMessage(ABM_SETPOS, abd);
     }
 
