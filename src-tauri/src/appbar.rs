@@ -66,30 +66,6 @@ pub mod platform {
         windows::core::BOOL(1)
     }
 
-    /// Query and set appbar position. Called twice on first registration
-    /// to work around the initial offset when a taskbar is present.
-    unsafe fn set_appbar_pos(abd: &mut APPBARDATA, monitor_rect: &RECT, bar_height: u32) {
-        abd.uEdge = 1; // ABE_TOP
-        abd.rc = RECT {
-            left: monitor_rect.left,
-            top: monitor_rect.top,
-            right: monitor_rect.right,
-            bottom: monitor_rect.top + bar_height as i32,
-        };
-
-        SHAppBarMessage(ABM_QUERYPOS, abd);
-
-        // Force position to the monitor's absolute top edge.
-        // QUERYPOS may shift rc.top down on monitors with a taskbar,
-        // but we always want to sit at the very top.
-        abd.rc.left = monitor_rect.left;
-        abd.rc.top = monitor_rect.top;
-        abd.rc.right = monitor_rect.right;
-        abd.rc.bottom = monitor_rect.top + bar_height as i32;
-
-        SHAppBarMessage(ABM_SETPOS, abd);
-    }
-
     /// Register the window as an appbar at the top of the specified monitor.
     pub fn register_appbar(hwnd: isize, bar_height: u32, monitor_index: u32) -> bool {
         let monitors = enumerate_monitors();
@@ -121,11 +97,18 @@ pub mod platform {
             }
             REGISTERED.store(true, Ordering::SeqCst);
 
-            // First register with 1px height, then resize to actual height.
-            // On monitors with a taskbar, the initial work area calculation
-            // can cause an offset; a size change forces Windows to recalculate.
-            set_appbar_pos(&mut abd, &monitor_rect, 1);
-            set_appbar_pos(&mut abd, &monitor_rect, bar_height);
+            // Query and set position
+            abd.uEdge = 1; // ABE_TOP
+            abd.rc = RECT {
+                left: monitor_rect.left,
+                top: monitor_rect.top,
+                right: monitor_rect.right,
+                bottom: monitor_rect.top + bar_height as i32,
+            };
+
+            SHAppBarMessage(ABM_QUERYPOS, &mut abd);
+            abd.rc.bottom = abd.rc.top + bar_height as i32;
+            SHAppBarMessage(ABM_SETPOS, &mut abd);
 
             // Move the actual window to match
             let _ = MoveWindow(
