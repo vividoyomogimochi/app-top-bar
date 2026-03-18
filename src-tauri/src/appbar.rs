@@ -11,7 +11,7 @@ pub mod platform {
         SHAppBarMessage, ABM_NEW, ABM_QUERYPOS, ABM_REMOVE, ABM_SETPOS, APPBARDATA,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        MoveWindow, SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE,
+        MoveWindow, SetWindowPos, HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE,
     };
 
     use std::mem;
@@ -128,7 +128,7 @@ pub mod platform {
                 abd.rc.top,
                 abd.rc.right - abd.rc.left,
                 abd.rc.bottom - abd.rc.top,
-                SWP_NOACTIVATE,
+                SWP_NOACTIVATE | SWP_FRAMECHANGED,
             );
         }
 

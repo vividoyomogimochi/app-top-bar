@@ -61,12 +61,13 @@ pub fn run() {
             .always_on_top(true)
             .skip_taskbar(true)
             .shadow(false)
+            .visible(false)
             .build()?;
 
             // Setup system tray
             tray::setup_tray(&handle)?;
 
-            // On Windows, register the appbar
+            // On Windows, register the appbar then show the window
             #[cfg(windows)]
             {
                 if let Ok(hwnd) = window.hwnd() {
@@ -77,6 +78,9 @@ pub fn run() {
                     );
                 }
             }
+
+            // Show window after appbar registration to avoid initial position flicker
+            window.show()?;
 
             // Sync autostart registry with config
             if let Some(autostart) =
