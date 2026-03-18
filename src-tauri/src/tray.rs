@@ -126,35 +126,45 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             }
 
             if id == "autostart" {
-                let state = app.state::<ConfigState>();
-                let mut cfg = state.0.lock().unwrap();
-                cfg.auto_start = !cfg.auto_start;
-                config::save_config(&cfg);
+                {
+                    let state = app.state::<ConfigState>();
+                    let mut cfg = state.0.lock().unwrap();
+                    cfg.auto_start = !cfg.auto_start;
+                    config::save_config(&cfg);
+                } // lock dropped before update_check_states
                 update_check_states(app);
                 return;
             }
 
             if let Some(idx_str) = id.strip_prefix("monitor_") {
                 if let Ok(idx) = idx_str.parse::<u32>() {
-                    let state = app.state::<ConfigState>();
-                    let mut cfg = state.0.lock().unwrap();
+                    let should_register = {
+                        let state = app.state::<ConfigState>();
+                        let mut cfg = state.0.lock().unwrap();
 
-                    if cfg.monitor == idx {
-                        update_check_states(app);
-                        return;
-                    }
+                        if cfg.monitor == idx {
+                            false
+                        } else {
+                            cfg.monitor = idx;
+                            config::save_config(&cfg);
+                            true
+                        }
+                    }; // lock dropped
 
-                    cfg.monitor = idx;
-                    config::save_config(&cfg);
-
-                    #[cfg(windows)]
-                    if let Some(window) = app.get_webview_window("main") {
-                        if let Ok(hwnd) = window.hwnd() {
-                            platform::register_appbar(
-                                hwnd.0 as isize,
-                                cfg.bar_height,
-                                cfg.monitor,
-                            );
+                    if should_register {
+                        #[cfg(windows)]
+                        {
+                            let state = app.state::<ConfigState>();
+                            let cfg = state.0.lock().unwrap();
+                            if let Some(window) = app.get_webview_window("main") {
+                                if let Ok(hwnd) = window.hwnd() {
+                                    platform::register_appbar(
+                                        hwnd.0 as isize,
+                                        cfg.bar_height,
+                                        cfg.monitor,
+                                    );
+                                }
+                            }
                         }
                     }
 
@@ -165,21 +175,33 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 
             if let Some(h_str) = id.strip_prefix("height_") {
                 if let Ok(h) = h_str.parse::<u32>() {
-                    let state = app.state::<ConfigState>();
-                    let mut cfg = state.0.lock().unwrap();
+                    let should_register = {
+                        let state = app.state::<ConfigState>();
+                        let mut cfg = state.0.lock().unwrap();
 
-                    if cfg.bar_height == h {
-                        update_check_states(app);
-                        return;
-                    }
+                        if cfg.bar_height == h {
+                            false
+                        } else {
+                            cfg.bar_height = h;
+                            config::save_config(&cfg);
+                            true
+                        }
+                    }; // lock dropped
 
-                    cfg.bar_height = h;
-                    config::save_config(&cfg);
-
-                    #[cfg(windows)]
-                    if let Some(window) = app.get_webview_window("main") {
-                        if let Ok(hwnd) = window.hwnd() {
-                            platform::register_appbar(hwnd.0 as isize, h, cfg.monitor);
+                    if should_register {
+                        #[cfg(windows)]
+                        {
+                            let state = app.state::<ConfigState>();
+                            let cfg = state.0.lock().unwrap();
+                            if let Some(window) = app.get_webview_window("main") {
+                                if let Ok(hwnd) = window.hwnd() {
+                                    platform::register_appbar(
+                                        hwnd.0 as isize,
+                                        cfg.bar_height,
+                                        cfg.monitor,
+                                    );
+                                }
+                            }
                         }
                     }
 
