@@ -121,9 +121,10 @@ pub mod platform {
             }
             REGISTERED.store(true, Ordering::SeqCst);
 
-            // Set position twice — first call can return an offset on monitors
-            // with a taskbar, second call gets the correct position.
-            set_appbar_pos(&mut abd, &monitor_rect, bar_height);
+            // First register with 1px height, then resize to actual height.
+            // On monitors with a taskbar, the initial work area calculation
+            // can cause an offset; a size change forces Windows to recalculate.
+            set_appbar_pos(&mut abd, &monitor_rect, 1);
             set_appbar_pos(&mut abd, &monitor_rect, bar_height);
 
             // Move the actual window to match
