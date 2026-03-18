@@ -1,3 +1,4 @@
+use std::sync::Mutex;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, Submenu},
     tray::TrayIconBuilder,
@@ -5,18 +6,48 @@ use tauri::{
 };
 
 use crate::appbar::platform;
-use crate::config::{self, AppConfig, ConfigState};
+use crate::config::{self, ConfigState};
 
-const TRAY_ID: &str = "main-tray";
 const HEIGHTS: &[u32] = &[40, 60, 80, 100, 120];
 
-/// Build the tray menu with correct check states based on current config.
-fn build_menu(app: &AppHandle, config: &AppConfig) -> tauri::Result<Menu<tauri::Wry>> {
-    let monitors = platform::enumerate_monitors();
-    let monitor_count = monitors.len();
+/// Stored references to tray menu items for updating check states.
+pub struct TrayMenuItems {
+    monitor_items: Vec<CheckMenuItem<tauri::Wry>>,
+    height_items: Vec<CheckMenuItem<tauri::Wry>>,
+    autostart_item: CheckMenuItem<tauri::Wry>,
+}
 
+/// Update check marks on monitor and height items to reflect current config.
+fn update_check_states(app: &AppHandle) {
+    let config = {
+        let state = app.state::<ConfigState>();
+        let cfg = state.0.lock().unwrap().clone();
+        cfg
+    };
+    let items = app.state::<Mutex<TrayMenuItems>>();
+    let items = items.lock().unwrap();
+
+    for (i, item) in items.monitor_items.iter().enumerate() {
+        let _ = item.set_checked(i as u32 == config.monitor);
+    }
+    for (i, item) in items.height_items.iter().enumerate() {
+        let _ = item.set_checked(HEIGHTS[i] == config.bar_height);
+    }
+    let _ = items.autostart_item.set_checked(config.auto_start);
+}
+
+pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
+    let config = {
+        let state = app.state::<ConfigState>();
+        let cfg = state.0.lock().unwrap().clone();
+        cfg
+    };
+
+    // Monitor submenu
+    let monitors = platform::enumerate_monitors();
     let monitor_sub = Submenu::with_id(app, "monitors", "Monitor", true)?;
-    for i in 0..monitor_count {
+    let mut monitor_items = Vec::new();
+    for i in 0..monitors.len() {
         let label = if i == 0 {
             format!("Monitor {} (Primary)", i + 1)
         } else {
@@ -31,9 +62,12 @@ fn build_menu(app: &AppHandle, config: &AppConfig) -> tauri::Result<Menu<tauri::
             None::<&str>,
         )?;
         monitor_sub.append(&item)?;
+        monitor_items.push(item);
     }
 
+    // Height submenu
     let height_sub = Submenu::with_id(app, "heights", "Bar Height", true)?;
+    let mut height_items = Vec::new();
     for &h in HEIGHTS {
         let item = CheckMenuItem::with_id(
             app,
@@ -44,8 +78,10 @@ fn build_menu(app: &AppHandle, config: &AppConfig) -> tauri::Result<Menu<tauri::
             None::<&str>,
         )?;
         height_sub.append(&item)?;
+        height_items.push(item);
     }
 
+    // Auto-start toggle
     let autostart_item = CheckMenuItem::with_id(
         app,
         "autostart",
@@ -57,36 +93,19 @@ fn build_menu(app: &AppHandle, config: &AppConfig) -> tauri::Result<Menu<tauri::
 
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
-    Menu::with_items(
+    let menu = Menu::with_items(
         app,
         &[&monitor_sub, &height_sub, &autostart_item, &quit_item],
-    )
-}
+    )?;
 
-/// Rebuild the tray menu to reflect updated check states.
-fn rebuild_tray_menu(app: &AppHandle) {
-    let config = {
-        let state = app.state::<ConfigState>();
-        let cfg = state.0.lock().unwrap().clone();
-        cfg
-    };
-    if let Ok(menu) = build_menu(app, &config) {
-        if let Some(tray) = app.tray_by_id(TRAY_ID) {
-            let _ = tray.set_menu(Some(menu));
-        }
-    }
-}
+    // Store item references for later check-state updates
+    app.manage(Mutex::new(TrayMenuItems {
+        monitor_items,
+        height_items,
+        autostart_item,
+    }));
 
-pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
-    let config = {
-        let state = app.state::<ConfigState>();
-        let cfg = state.0.lock().unwrap().clone();
-        cfg
-    };
-
-    let menu = build_menu(app, &config)?;
-
-    TrayIconBuilder::with_id(TRAY_ID)
+    TrayIconBuilder::with_id("main-tray")
         .menu(&menu)
         .tooltip("Top Bar")
         .on_menu_event(move |app, event| {
@@ -111,7 +130,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                 let mut cfg = state.0.lock().unwrap();
                 cfg.auto_start = !cfg.auto_start;
                 config::save_config(&cfg);
-                rebuild_tray_menu(app);
+                update_check_states(app);
                 return;
             }
 
@@ -120,9 +139,8 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                     let state = app.state::<ConfigState>();
                     let mut cfg = state.0.lock().unwrap();
 
-                    // Skip if same monitor already selected
                     if cfg.monitor == idx {
-                        rebuild_tray_menu(app);
+                        update_check_states(app);
                         return;
                     }
 
@@ -140,7 +158,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                         }
                     }
 
-                    rebuild_tray_menu(app);
+                    update_check_states(app);
                 }
                 return;
             }
@@ -150,9 +168,8 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                     let state = app.state::<ConfigState>();
                     let mut cfg = state.0.lock().unwrap();
 
-                    // Skip if same height already selected
                     if cfg.bar_height == h {
-                        rebuild_tray_menu(app);
+                        update_check_states(app);
                         return;
                     }
 
@@ -166,7 +183,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                         }
                     }
 
-                    rebuild_tray_menu(app);
+                    update_check_states(app);
                 }
             }
         })
