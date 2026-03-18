@@ -5,21 +5,14 @@ use tauri::{
 };
 
 use crate::appbar::platform;
-use crate::config::{self, ConfigState};
+use crate::config::{self, AppConfig, ConfigState};
 
-pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
-    let config = {
-        let state = app.state::<ConfigState>();
-        let cfg = state.0.lock().unwrap().clone();
-        cfg
-    };
+const TRAY_ID: &str = "main-tray";
+const HEIGHTS: &[u32] = &[40, 60, 80, 100, 120];
 
-    // Monitor submenu
-    #[cfg(windows)]
+/// Build the tray menu with correct check states based on current config.
+fn build_menu(app: &AppHandle, config: &AppConfig) -> tauri::Result<Menu<tauri::Wry>> {
     let monitors = platform::enumerate_monitors();
-    #[cfg(not(windows))]
-    let monitors = platform::enumerate_monitors();
-
     let monitor_count = monitors.len();
 
     let monitor_sub = Submenu::with_id(app, "monitors", "Monitor", true)?;
@@ -40,10 +33,8 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         monitor_sub.append(&item)?;
     }
 
-    // Height submenu
-    let heights: &[u32] = &[40, 60, 80, 100, 120];
     let height_sub = Submenu::with_id(app, "heights", "Bar Height", true)?;
-    for &h in heights {
+    for &h in HEIGHTS {
         let item = CheckMenuItem::with_id(
             app,
             format!("height_{}", h),
@@ -55,7 +46,6 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         height_sub.append(&item)?;
     }
 
-    // Auto-start toggle
     let autostart_item = CheckMenuItem::with_id(
         app,
         "autostart",
@@ -67,19 +57,42 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
-    let menu = Menu::with_items(
+    Menu::with_items(
         app,
         &[&monitor_sub, &height_sub, &autostart_item, &quit_item],
-    )?;
+    )
+}
 
-    TrayIconBuilder::new()
+/// Rebuild the tray menu to reflect updated check states.
+fn rebuild_tray_menu(app: &AppHandle) {
+    let config = {
+        let state = app.state::<ConfigState>();
+        let cfg = state.0.lock().unwrap().clone();
+        cfg
+    };
+    if let Ok(menu) = build_menu(app, &config) {
+        if let Some(tray) = app.tray_by_id(TRAY_ID) {
+            let _ = tray.set_menu(Some(menu));
+        }
+    }
+}
+
+pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
+    let config = {
+        let state = app.state::<ConfigState>();
+        let cfg = state.0.lock().unwrap().clone();
+        cfg
+    };
+
+    let menu = build_menu(app, &config)?;
+
+    TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
         .tooltip("Top Bar")
         .on_menu_event(move |app, event| {
             let id = event.id().as_ref();
 
             if id == "quit" {
-                // Unregister appbar before quitting
                 if let Some(window) = app.get_webview_window("main") {
                     #[cfg(windows)]
                     {
@@ -98,6 +111,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                 let mut cfg = state.0.lock().unwrap();
                 cfg.auto_start = !cfg.auto_start;
                 config::save_config(&cfg);
+                rebuild_tray_menu(app);
                 return;
             }
 
@@ -105,6 +119,13 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                 if let Ok(idx) = idx_str.parse::<u32>() {
                     let state = app.state::<ConfigState>();
                     let mut cfg = state.0.lock().unwrap();
+
+                    // Skip if same monitor already selected
+                    if cfg.monitor == idx {
+                        rebuild_tray_menu(app);
+                        return;
+                    }
+
                     cfg.monitor = idx;
                     config::save_config(&cfg);
 
@@ -118,6 +139,8 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                             );
                         }
                     }
+
+                    rebuild_tray_menu(app);
                 }
                 return;
             }
@@ -126,6 +149,13 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                 if let Ok(h) = h_str.parse::<u32>() {
                     let state = app.state::<ConfigState>();
                     let mut cfg = state.0.lock().unwrap();
+
+                    // Skip if same height already selected
+                    if cfg.bar_height == h {
+                        rebuild_tray_menu(app);
+                        return;
+                    }
+
                     cfg.bar_height = h;
                     config::save_config(&cfg);
 
@@ -135,6 +165,8 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                             platform::register_appbar(hwnd.0 as isize, h, cfg.monitor);
                         }
                     }
+
+                    rebuild_tray_menu(app);
                 }
             }
         })

@@ -8,22 +8,7 @@
   },
   "app": {
     "withGlobalTauri": false,
-    "windows": [
-      {
-        "label": "main",
-        "title": "Top Bar",
-        "url": "https://ticker.samoyed.moe/ticker/",
-        "width": 1920,
-        "height": 80,
-        "x": 0,
-        "y": 0,
-        "decorations": false,
-        "resizable": false,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "transparent": false
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }
