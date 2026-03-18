@@ -89,19 +89,36 @@ pub fn run() {
                 }
             }
 
-            // Unregister appbar on window close
+            // Handle window events
             let handle_clone = handle.clone();
             window.on_window_event(move |event| {
-                if let tauri::WindowEvent::CloseRequested { .. } = event {
-                    if let Some(win) = handle_clone.get_webview_window("main") {
+                match event {
+                    // After appbar registration the work area shifts down, and Tauri's
+                    // event loop re-applies position(0,0) relative to the new work area,
+                    // pushing the window down by bar_height.  Catch the spurious move
+                    // and snap the window back via Win32 API.
+                    tauri::WindowEvent::Moved(_pos) => {
                         #[cfg(windows)]
                         {
-                            if let Ok(hwnd) = win.hwnd() {
-                                appbar::platform::unregister_appbar(hwnd.0 as isize);
+                            if let Some(win) = handle_clone.get_webview_window("main") {
+                                if let Ok(hwnd) = win.hwnd() {
+                                    appbar::platform::correct_position(hwnd.0 as isize);
+                                }
                             }
                         }
-                        let _ = win;
                     }
+                    tauri::WindowEvent::CloseRequested { .. } => {
+                        if let Some(win) = handle_clone.get_webview_window("main") {
+                            #[cfg(windows)]
+                            {
+                                if let Ok(hwnd) = win.hwnd() {
+                                    appbar::platform::unregister_appbar(hwnd.0 as isize);
+                                }
+                            }
+                            let _ = win;
+                        }
+                    }
+                    _ => {}
                 }
             });
 
