@@ -132,7 +132,8 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                 if let Some(window) = app.get_webview_window("settings") {
                     let _ = window.set_focus();
                 } else {
-                    let _ = WebviewWindowBuilder::new(
+                    let main_window = app.get_webview_window("main");
+                    let mut builder = WebviewWindowBuilder::new(
                         app,
                         "settings",
                         WebviewUrl::App("settings.html".into()),
@@ -140,8 +141,15 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                     .title("Set URL")
                     .inner_size(420.0, 130.0)
                     .resizable(false)
-                    .center()
-                    .build();
+                    .minimizable(false)
+                    .maximizable(false)
+                    .center();
+
+                    if let Some(ref parent) = main_window {
+                        builder = builder.parent(parent).unwrap_or(builder);
+                    }
+
+                    let _ = builder.build();
                 }
                 return;
             }
