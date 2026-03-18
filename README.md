@@ -1,39 +1,36 @@
 # LED AppBar
 
-Windows のデスクトップ上端に常駐する LED ニュースティッカーウィジェット。
-画面の作業領域を予約するため、他のウィンドウを最大化してもバーの下に収まる。
+デスクトップの上端に常駐する、LED ドットマトリクス風のニュースティッカーです。
+Windows の AppBar API を使って画面端の領域を確保するので、ウィンドウを最大化してもバーと重なりません。タスクバーと同じ仕組みです。
 
-## 機能
+表示するコンテンツは [ticker.samoyed.moe](https://ticker.samoyed.moe/ticker/) から取得し、WebView2 で Canvas ベースの LED 風アニメーションとして描画します。
 
-- **画面上端に常駐表示** — 枠なし・最前面・タスクバー非表示
-- **作業領域の予約** — Windows AppBar API (`SHAppBarNotify`) でタスクバーと同じ仕組みで画面端を確保
-- **マルチモニタ対応** — トレイメニューからモニタを切り替え可能（設定は保存される）
-- **バー高さ変更** — 40 / 60 / 80 / 100 / 120px から選択
-- **自動起動** — Windows 起動時に自動実行（レジストリ Run キー）
-- **システムトレイ** — モニタ選択・高さ変更・自動起動・終了
+## 主な機能
 
-## 表示コンテンツ
+- 画面上端に枠なし・最前面で常駐（タスクバーには表示されません）
+- マルチモニタ対応 — トレイメニューから表示先を切り替えられます
+- バーの高さを 40〜120px の 5 段階で変更できます
+- Windows 起動時の自動実行に対応しています（レジストリ Run キー）
+- すべての設定はシステムトレイのメニューから操作できます
 
-[https://ticker.samoyed.moe/ticker/](https://ticker.samoyed.moe/ticker/) を WebView2 で表示する。
-Canvas ベースの LED ドットマトリクス風ニュースティッカー。
+## 必要な環境
 
-## 必要環境
+- Windows 10 または 11
+- WebView2 Runtime（通常はプリインストール済み）
 
-- Windows 10 / 11
-- WebView2 Runtime（Windows 10/11 ならプリインストール済み）
+## ビルド方法
 
-## ビルド
+Node.js、Rust、Visual Studio Build Tools (C++) が必要です。
 
 ```powershell
-# 前提: Node.js, Rust, Visual Studio Build Tools (C++) が必要
 npm install
-npm run tauri dev    # 開発モード
-npm run tauri build  # リリースビルド（MSI/NSIS生成）
+npm run tauri dev    # 開発モードで起動
+npm run tauri build  # リリースビルド（MSI / NSIS インストーラを生成）
 ```
 
 ## 設定ファイル
 
-`%APPDATA%/app-top-bar/config.json` に保存される。
+設定は `%APPDATA%/app-top-bar/config.json` に保存されます。
 
 ```json
 {
