@@ -126,12 +126,23 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             }
 
             if id == "autostart" {
-                {
+                let new_state = {
                     let state = app.state::<ConfigState>();
                     let mut cfg = state.0.lock().unwrap();
                     cfg.auto_start = !cfg.auto_start;
                     config::save_config(&cfg);
-                } // lock dropped before update_check_states
+                    cfg.auto_start
+                };
+                // Sync registry
+                if let Some(autostart) =
+                    app.try_state::<tauri_plugin_autostart::AutoLaunchManager>()
+                {
+                    if new_state {
+                        let _ = autostart.enable();
+                    } else {
+                        let _ = autostart.disable();
+                    }
+                }
                 update_check_states(app);
                 return;
             }

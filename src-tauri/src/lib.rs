@@ -78,12 +78,14 @@ pub fn run() {
                 }
             }
 
-            // Handle autostart
-            if config.auto_start {
-                if let Some(autostart) =
-                    app.try_state::<tauri_plugin_autostart::AutoLaunchManager>()
-                {
+            // Sync autostart registry with config
+            if let Some(autostart) =
+                app.try_state::<tauri_plugin_autostart::AutoLaunchManager>()
+            {
+                if config.auto_start {
                     let _ = autostart.enable();
+                } else {
+                    let _ = autostart.disable();
                 }
             }
 
