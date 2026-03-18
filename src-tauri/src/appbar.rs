@@ -87,11 +87,6 @@ pub mod platform {
         }
     }
 
-    /// Returns whether auto-hide on fullscreen is enabled.
-    pub fn is_auto_hide_enabled() -> bool {
-        AUTO_HIDE_ENABLED.load(Ordering::SeqCst)
-    }
-
     /// Get monitor info sorted by position (left-to-right, then top-to-bottom)
     /// to match Windows Display Settings ordering.
     /// Returns Vec of (monitor_rect, is_primary).
@@ -182,7 +177,7 @@ pub mod platform {
                 if *orig == 0 {
                     let prev = GetWindowLongPtrW(hwnd, GWL_WNDPROC);
                     *orig = prev;
-                    SetWindowLongPtrW(hwnd, GWL_WNDPROC, appbar_wndproc as isize);
+                    SetWindowLongPtrW(hwnd, GWL_WNDPROC, appbar_wndproc as *const () as isize);
                 }
             }
 
@@ -316,8 +311,4 @@ pub mod platform {
     pub fn unregister_appbar(_hwnd: isize) {}
 
     pub fn set_auto_hide(_enabled: bool) {}
-
-    pub fn is_auto_hide_enabled() -> bool {
-        false
-    }
 }
