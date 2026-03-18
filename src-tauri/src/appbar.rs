@@ -19,7 +19,8 @@ pub mod platform {
 
     static REGISTERED: AtomicBool = AtomicBool::new(false);
 
-    /// Get monitor work area info for each monitor.
+    /// Get monitor info sorted by position (left-to-right, then top-to-bottom)
+    /// to match Windows Display Settings ordering.
     /// Returns Vec of (monitor_rect, is_primary).
     pub fn enumerate_monitors() -> Vec<(RECT, bool)> {
         let monitors: std::sync::Mutex<Vec<(RECT, bool)>> = std::sync::Mutex::new(Vec::new());
@@ -34,7 +35,16 @@ pub mod platform {
             );
         }
 
-        monitors.into_inner().unwrap_or_default()
+        let mut result = monitors.into_inner().unwrap_or_default();
+
+        // Sort by left coordinate, then top — matches Windows display settings order
+        result.sort_by(|a, b| {
+            let a_rect = &a.0;
+            let b_rect = &b.0;
+            a_rect.left.cmp(&b_rect.left).then(a_rect.top.cmp(&b_rect.top))
+        });
+
+        result
     }
 
     unsafe extern "system" fn monitor_enum_proc(
@@ -54,6 +64,22 @@ pub mod platform {
             }
         }
         windows::core::BOOL(1)
+    }
+
+    /// Query and set appbar position. Called twice on first registration
+    /// to work around the initial offset when a taskbar is present.
+    unsafe fn set_appbar_pos(abd: &mut APPBARDATA, monitor_rect: &RECT, bar_height: u32) {
+        abd.uEdge = 1; // ABE_TOP
+        abd.rc = RECT {
+            left: monitor_rect.left,
+            top: monitor_rect.top,
+            right: monitor_rect.right,
+            bottom: monitor_rect.top + bar_height as i32,
+        };
+
+        SHAppBarMessage(ABM_QUERYPOS, abd);
+        abd.rc.bottom = abd.rc.top + bar_height as i32;
+        SHAppBarMessage(ABM_SETPOS, abd);
     }
 
     /// Register the window as an appbar at the top of the specified monitor.
@@ -87,21 +113,10 @@ pub mod platform {
             }
             REGISTERED.store(true, Ordering::SeqCst);
 
-            // Query and set position
-            abd.uEdge = 1; // ABE_TOP
-            abd.rc = RECT {
-                left: monitor_rect.left,
-                top: monitor_rect.top,
-                right: monitor_rect.right,
-                bottom: monitor_rect.top + bar_height as i32,
-            };
-
-            SHAppBarMessage(ABM_QUERYPOS, &mut abd);
-
-            // After QUERYPOS, the system may have adjusted abd.rc
-            abd.rc.bottom = abd.rc.top + bar_height as i32;
-
-            SHAppBarMessage(ABM_SETPOS, &mut abd);
+            // Set position twice — first call can return an offset on monitors
+            // with a taskbar, second call gets the correct position.
+            set_appbar_pos(&mut abd, &monitor_rect, bar_height);
+            set_appbar_pos(&mut abd, &monitor_rect, bar_height);
 
             // Move the actual window to match
             let _ = MoveWindow(
