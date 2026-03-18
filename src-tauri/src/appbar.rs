@@ -11,7 +11,10 @@ pub mod platform {
         SHAppBarMessage, ABM_NEW, ABM_QUERYPOS, ABM_REMOVE, ABM_SETPOS, APPBARDATA,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        MoveWindow, SetWindowPos, HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+        GetWindowLongW, MoveWindow, SetWindowLongW, SetWindowPos, GWL_EXSTYLE, GWL_STYLE,
+        HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+        WINDOW_EX_STYLE, WINDOW_STYLE, WS_CAPTION, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME,
+        WS_EX_WINDOWEDGE, WS_POPUP, WS_THICKFRAME,
     };
 
     use std::mem;
@@ -85,6 +88,29 @@ pub mod platform {
         let hwnd = HWND(hwnd as *mut _);
 
         unsafe {
+            // Strip frame styles that WRY leaves on even with decorations(false).
+            // WS_THICKFRAME / WS_CAPTION cause an invisible border that offsets
+            // the window position on first show.
+            let style = WINDOW_STYLE(GetWindowLongW(hwnd, GWL_STYLE) as u32);
+            let new_style = (style & !(WS_THICKFRAME | WS_CAPTION)) | WS_POPUP;
+            SetWindowLongW(hwnd, GWL_STYLE, new_style.0 as i32);
+
+            let ex_style = WINDOW_EX_STYLE(GetWindowLongW(hwnd, GWL_EXSTYLE) as u32);
+            let new_ex_style =
+                ex_style & !(WS_EX_CLIENTEDGE | WS_EX_WINDOWEDGE | WS_EX_DLGMODALFRAME);
+            SetWindowLongW(hwnd, GWL_EXSTYLE, new_ex_style.0 as i32);
+
+            // Apply style changes before positioning
+            let _ = SetWindowPos(
+                hwnd,
+                None,
+                0,
+                0,
+                0,
+                0,
+                SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            );
+
             // Remove previous registration if any
             if REGISTERED.load(Ordering::SeqCst) {
                 unregister_appbar(hwnd.0 as isize);
