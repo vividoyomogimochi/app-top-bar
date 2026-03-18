@@ -106,8 +106,9 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     }));
 
     TrayIconBuilder::with_id("main-tray")
+        .icon(tauri::include_image!("icons/32x32.png"))
         .menu(&menu)
-        .tooltip("Top Bar")
+        .tooltip("LED AppBar")
         .on_menu_event(move |app, event| {
             let id = event.id().as_ref();
 

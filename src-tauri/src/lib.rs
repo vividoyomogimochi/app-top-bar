@@ -53,7 +53,7 @@ pub fn run() {
                 WebviewUrl::External(external_url),
             )
             .initialization_script(SCROLLBAR_HIDE_SCRIPT)
-            .title("Top Bar")
+            .title("LED AppBar")
             .inner_size(1920.0, config.bar_height as f64)
             .position(0.0, 0.0)
             .decorations(false)
