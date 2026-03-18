@@ -146,7 +146,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                     .center();
 
                     if let Some(ref parent) = main_window {
-                        builder = builder.parent(parent).unwrap_or(builder);
+                        builder = builder.parent(parent).expect("failed to set parent window");
                     }
 
                     let _ = builder.build();
