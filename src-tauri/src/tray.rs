@@ -175,7 +175,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                     let state = app.state::<ConfigState>();
                     let mut cfg = state.0.lock().unwrap();
                     cfg.auto_start = !cfg.auto_start;
-                    config::save_config(&cfg);
+                    config::save_config(app, &cfg);
                     cfg.auto_start
                 };
                 // Sync registry
@@ -197,7 +197,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                     let state = app.state::<ConfigState>();
                     let mut cfg = state.0.lock().unwrap();
                     cfg.auto_hide_fullscreen = !cfg.auto_hide_fullscreen;
-                    config::save_config(&cfg);
+                    config::save_config(app, &cfg);
                     cfg.auto_hide_fullscreen
                 };
                 platform::set_auto_hide(new_state);
@@ -215,7 +215,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                             false
                         } else {
                             cfg.monitor = idx;
-                            config::save_config(&cfg);
+                            config::save_config(app, &cfg);
                             true
                         }
                     }; // lock dropped
@@ -252,7 +252,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                             false
                         } else {
                             cfg.bar_height = h;
-                            config::save_config(&cfg);
+                            config::save_config(app, &cfg);
                             true
                         }
                     }; // lock dropped

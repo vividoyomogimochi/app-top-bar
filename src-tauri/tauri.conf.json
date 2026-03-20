@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "LED AppBar",
-  "version": "0.1.0",
-  "identifier": "com.katagiri.app-top-bar",
+  "version": "0.1.1",
+  "identifier": "jp.ne.ama.app-top-bar",
   "build": {
     "frontendDist": "../src"
   },

@@ -17,7 +17,7 @@ fn set_url(app: tauri::AppHandle, state: tauri::State<'_, ConfigState>, url: Str
     {
         let mut cfg = state.0.lock().unwrap();
         cfg.url = url.clone();
-        config::save_config(&cfg);
+        config::save_config(&app, &cfg);
     }
     if let Some(window) = app.get_webview_window("main") {
         if let Ok(parsed) = url.parse::<url::Url>() {
@@ -50,8 +50,6 @@ const SCROLLBAR_HIDE_SCRIPT: &str = r#"
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let cfg = load_config();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             // Focus existing window when a second instance is launched
@@ -64,15 +62,11 @@ pub fn run() {
             None,
         ))
         .invoke_handler(tauri::generate_handler![get_url, set_url, close_settings_window])
-        .manage(ConfigState(Mutex::new(cfg)))
         .setup(|app| {
             let handle = app.handle().clone();
 
-            let config = {
-                let state = handle.state::<ConfigState>();
-                let cfg = state.0.lock().unwrap().clone();
-                cfg
-            };
+            let config = load_config(&handle);
+            app.manage(ConfigState(Mutex::new(config.clone())));
 
             // Create the window programmatically for initialization_script support
             let external_url: url::Url = config
