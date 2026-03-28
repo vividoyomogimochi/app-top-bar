@@ -1,6 +1,6 @@
 [package]
 name = "app-top-bar"
-version = "0.1.1"
+version = "0.2.0"
 description = "Desktop top bar widget that reserves screen space"
 authors = ["Amane Katagiri"]
 edition = "2021"
