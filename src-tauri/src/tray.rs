@@ -7,6 +7,7 @@ use tauri::{
 
 use crate::appbar::platform;
 use crate::config::{self, ConfigState};
+use crate::server;
 
 const HEIGHTS: &[u32] = &[40, 60, 80, 100, 120];
 
@@ -20,11 +21,7 @@ pub struct TrayMenuItems {
 
 /// Update check marks on monitor and height items to reflect current config.
 fn update_check_states(app: &AppHandle) {
-    let config = {
-        let state = app.state::<ConfigState>();
-        let cfg = state.0.lock().unwrap().clone();
-        cfg
-    };
+    let config = app.state::<ConfigState>().0.lock().unwrap().clone();
     let items = app.state::<Mutex<TrayMenuItems>>();
     let items = items.lock().unwrap();
 
@@ -38,12 +35,34 @@ fn update_check_states(app: &AppHandle) {
     let _ = items.auto_hide_item.set_checked(config.auto_hide_fullscreen);
 }
 
+/// Open or focus a settings dialog window.
+fn open_settings_window(app: &AppHandle, label: &str, html: &str, title: &str) {
+    if let Some(window) = app.get_webview_window(label) {
+        let _ = window.set_focus();
+        return;
+    }
+    let main_window = app.get_webview_window("main");
+    let mut builder = WebviewWindowBuilder::new(
+        app,
+        label,
+        WebviewUrl::App(html.into()),
+    )
+    .title(title)
+    .inner_size(420.0, 130.0)
+    .resizable(false)
+    .minimizable(false)
+    .maximizable(false)
+    .center();
+
+    if let Some(ref parent) = main_window {
+        builder = builder.parent(parent).expect("failed to set parent window");
+    }
+
+    let _ = builder.build();
+}
+
 pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
-    let config = {
-        let state = app.state::<ConfigState>();
-        let cfg = state.0.lock().unwrap().clone();
-        cfg
-    };
+    let config = app.state::<ConfigState>().0.lock().unwrap().clone();
 
     // Monitor submenu
     let monitors = platform::enumerate_monitors();
@@ -104,11 +123,12 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     )?;
 
     let set_url_item = MenuItem::with_id(app, "set_url", "Set URL...", true, None::<&str>)?;
+    let set_server_item = MenuItem::with_id(app, "set_server", "Set Server...", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
     let menu = Menu::with_items(
         app,
-        &[&monitor_sub, &height_sub, &autostart_item, &auto_hide_item, &set_url_item, &quit_item],
+        &[&monitor_sub, &height_sub, &autostart_item, &auto_hide_item, &set_url_item, &set_server_item, &quit_item],
     )?;
 
     // Store item references for later check-state updates
@@ -130,6 +150,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             let id = event.id().as_ref();
 
             if id == "quit" {
+                server::stop(app);
                 if let Some(window) = app.get_webview_window("main") {
                     #[cfg(windows)]
                     {
@@ -144,29 +165,12 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             }
 
             if id == "set_url" {
-                // Focus existing settings window or create a new one
-                if let Some(window) = app.get_webview_window("settings") {
-                    let _ = window.set_focus();
-                } else {
-                    let main_window = app.get_webview_window("main");
-                    let mut builder = WebviewWindowBuilder::new(
-                        app,
-                        "settings",
-                        WebviewUrl::App("settings.html".into()),
-                    )
-                    .title("Set URL")
-                    .inner_size(420.0, 130.0)
-                    .resizable(false)
-                    .minimizable(false)
-                    .maximizable(false)
-                    .center();
+                open_settings_window(app, "settings", "settings.html", "Set URL");
+                return;
+            }
 
-                    if let Some(ref parent) = main_window {
-                        builder = builder.parent(parent).expect("failed to set parent window");
-                    }
-
-                    let _ = builder.build();
-                }
+            if id == "set_server" {
+                open_settings_window(app, "server-settings", "server-settings.html", "Set Server");
                 return;
             }
 

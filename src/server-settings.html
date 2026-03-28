@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Set Server</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: #1e1e2e; color: #cdd6f4;
+    padding: 16px; display: flex; flex-direction: column; height: 100vh;
+  }
+  label { font-size: 13px; margin-bottom: 6px; display: block; }
+  .input-row { display: flex; gap: 6px; }
+  .input-row input[type="text"] { flex: 1; }
+  input[type="text"] {
+    padding: 8px 10px; border: 1px solid #45475a;
+    border-radius: 6px; background: #313244; color: #cdd6f4;
+    font-size: 13px; outline: none;
+  }
+  input[type="text"]:focus { border-color: #89b4fa; }
+  .buttons { margin-top: auto; display: flex; gap: 8px; justify-content: flex-end; }
+  button {
+    padding: 6px 18px; border: none; border-radius: 6px;
+    font-size: 13px; cursor: pointer;
+  }
+  .btn-browse { background: #585b70; color: #cdd6f4; padding: 6px 12px; }
+  .btn-browse:hover { background: #6c7086; }
+  .btn-save { background: #89b4fa; color: #1e1e2e; font-weight: 600; }
+  .btn-save:hover { background: #74c7ec; }
+  .btn-clear { background: #f38ba8; color: #1e1e2e; font-weight: 600; }
+  .btn-clear:hover { background: #eba0ac; }
+  .btn-cancel { background: #45475a; color: #cdd6f4; }
+  .btn-cancel:hover { background: #585b70; }
+</style>
+</head>
+<body>
+  <label for="cmd-input">Server executable path</label>
+  <div class="input-row">
+    <input type="text" id="cmd-input" placeholder="C:\path\to\server.exe" spellcheck="false">
+    <button class="btn-browse" id="btn-browse">Browse</button>
+  </div>
+  <div class="buttons">
+    <button class="btn-clear" id="btn-clear">Clear</button>
+    <button class="btn-cancel" id="btn-cancel">Cancel</button>
+    <button class="btn-save" id="btn-save">Save</button>
+  </div>
+<script>
+  const invoke = window.__TAURI_INTERNALS__.invoke;
+  const cmdInput = document.getElementById('cmd-input');
+
+  invoke('get_server_command').then(cmd => {
+    if (cmd) cmdInput.value = cmd;
+  });
+
+  document.getElementById('btn-browse').addEventListener('click', async () => {
+    const path = await invoke('browse_server_command');
+    if (path) cmdInput.value = path;
+  });
+
+  document.getElementById('btn-save').addEventListener('click', async () => {
+    const command = cmdInput.value.trim();
+    if (!command) return;
+    await invoke('set_server_command', { command });
+    invoke('close_server_settings_window');
+  });
+
+  document.getElementById('btn-clear').addEventListener('click', async () => {
+    await invoke('set_server_command', { command: null });
+    invoke('close_server_settings_window');
+  });
+
+  document.getElementById('btn-cancel').addEventListener('click', () => {
+    invoke('close_server_settings_window');
+  });
+
+  cmdInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('btn-save').click();
+    if (e.key === 'Escape') document.getElementById('btn-cancel').click();
+  });
+</script>
+</body>
+</html>

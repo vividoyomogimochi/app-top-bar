@@ -9,9 +9,12 @@ LED AppBar (Tauri v2)
 │   ├── lib.rs         アプリ初期化・ウィンドウ作成・プラグイン登録
 │   ├── appbar.rs      Windows AppBar API ラッパー
 │   ├── config.rs      設定の読み書き (JSON)
+│   ├── server.rs      サーバプロセス管理（起動・監視・自動リスタート）
 │   └── tray.rs        システムトレイメニュー
 └── フロントエンド (src/)
-    └── index.html     フォールバック用（通常は外部URL直接読み込み）
+    ├── index.html              フォールバック用（通常は外部URL直接読み込み）
+    ├── settings.html           URL 設定ダイアログ
+    └── server-settings.html    サーバ設定ダイアログ
 ```
 
 ## コア技術
@@ -69,7 +72,7 @@ Windows ディスプレイ設定の並び順と一致させている。
 ### 設定 (`config.rs`)
 
 `%APPDATA%/app-top-bar/config.json` に JSON で永続化。
-`dirs` クレートでプラットフォームごとの設定ディレクトリを解決。
+Tauri の `app.path().app_data_dir()` でプラットフォームごとの設定ディレクトリを解決。
 
 | キー | 型 | デフォルト | 説明 |
 |------|-----|-----------|------|
@@ -77,12 +80,43 @@ Windows ディスプレイ設定の並び順と一致させている。
 | `monitor` | u32 | 0 | 表示モニタのインデックス |
 | `auto_start` | bool | true | Windows 起動時に自動実行 |
 | `url` | String | ticker URL | WebView に読み込む URL |
+| `auto_hide_fullscreen` | bool | true | フルスクリーン時に自動非表示 |
+| `server_command` | String? | null | アプリと共に起動するサーバの実行ファイルパス |
 
 ### トレイメニュー (`tray.rs`)
 
 `CheckMenuItem` を使ったラジオボタン風のメニュー。
 アイテムの参照を `TrayMenuItems` 構造体で保持し、選択時に
 `set_checked()` で状態を更新する（メニュー再構築は ID 衝突を起こすため不可）。
+
+### サーバプロセス管理 (`server.rs`)
+
+トレイメニューの「Set Server...」から指定した実行ファイル（.exe / .bat / .cmd）を
+アプリと共にバックグラウンドで起動する。SSE や WebSocket を配信するサーバプロセスの
+同時起動を想定した機能。
+
+```
+起動の流れ (Windows):
+  Command::new(path)
+    .creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED)
+    .spawn()
+  → Job Object を作成し JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE を設定
+  → 子プロセスを Job に割り当て
+  → サスペンドされたスレッドを ResumeThread で再開
+```
+
+**Job Object**: .bat が起動した node.exe のような孫プロセスもまとめて管理するため、
+Windows の Job Object を使う。`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` フラグにより、
+Job ハンドルを閉じた時点でプロセスツリー全体が終了する。アプリがクラッシュした場合も
+OS が Job ハンドルを回収するため孤児プロセスは残らない。
+
+**ウォッチドッグ**: バックグラウンドスレッドが `try_wait()` で 1 秒ごとにプロセスを
+監視し、予期しない終了を検知すると 3 秒後に自動リスタートする。3 回連続で失敗した場合は
+ダイアログで通知して諦める。
+
+プロセスの終了タイミング:
+- アプリ終了時（Quit / CloseRequested）
+- サーバパスの変更・クリア時（旧プロセスを停止してから新プロセスを起動）
 
 ### 自動起動
 
@@ -96,10 +130,11 @@ Windows ディスプレイ設定の並び順と一致させている。
 | クレート | 用途 |
 |---------|------|
 | `tauri` v2 | アプリフレームワーク、WebView2 統合 |
-| `windows` v0.61 | Win32 AppBar API 呼び出し |
+| `windows` v0.61 | Win32 AppBar / Job Object / ToolHelp API |
 | `tauri-plugin-autostart` | Windows 自動起動 (レジストリ) |
+| `tauri-plugin-single-instance` | 二重起動防止 |
+| `tauri-plugin-dialog` | ファイル選択ダイアログ |
 | `serde` / `serde_json` | 設定ファイルのシリアライズ |
-| `dirs` | OS 標準の設定ディレクトリ取得 |
 
 ## デバッグのヒント
 

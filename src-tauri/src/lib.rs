@@ -1,8 +1,10 @@
 mod appbar;
 mod config;
+mod server;
 mod tray;
 
 use config::{ConfigState, load_config};
+use server::ServerProcess;
 use std::sync::Mutex;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::MacosLauncher;
@@ -29,6 +31,44 @@ fn set_url(app: tauri::AppHandle, state: tauri::State<'_, ConfigState>, url: Str
 #[tauri::command]
 fn close_settings_window(app: tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.close();
+    }
+}
+
+#[tauri::command]
+fn get_server_command(state: tauri::State<'_, ConfigState>) -> Option<String> {
+    state.0.lock().unwrap().server_command.clone()
+}
+
+#[tauri::command]
+fn set_server_command(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, ConfigState>,
+    command: Option<String>,
+) {
+    {
+        let mut cfg = state.0.lock().unwrap();
+        cfg.server_command = command.clone();
+        config::save_config(&app, &cfg);
+    }
+    server::apply(&app, command);
+}
+
+#[tauri::command]
+async fn browse_server_command(app: tauri::AppHandle) -> Option<String> {
+    use tauri_plugin_dialog::DialogExt;
+    let file = app
+        .dialog()
+        .file()
+        .add_filter("Executables", &["exe", "bat", "cmd"])
+        .add_filter("All files", &["*"])
+        .blocking_pick_file();
+    file.map(|f| f.to_string())
+}
+
+#[tauri::command]
+fn close_server_settings_window(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("server-settings") {
         let _ = window.close();
     }
 }
@@ -61,12 +101,22 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             None,
         ))
-        .invoke_handler(tauri::generate_handler![get_url, set_url, close_settings_window])
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![
+            get_url,
+            set_url,
+            close_settings_window,
+            get_server_command,
+            set_server_command,
+            browse_server_command,
+            close_server_settings_window,
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
 
             let config = load_config(&handle);
             app.manage(ConfigState(Mutex::new(config.clone())));
+            app.manage(ServerProcess::new());
 
             // Create the window programmatically for initialization_script support
             let external_url: url::Url = config
@@ -116,6 +166,9 @@ pub fn run() {
                 }
             }
 
+            // Start server process if configured
+            server::start_if_configured(&handle);
+
             // Handle window events
             let handle_clone = handle.clone();
             window.on_window_event(move |event| {
@@ -135,6 +188,7 @@ pub fn run() {
                         }
                     }
                     tauri::WindowEvent::CloseRequested { .. } => {
+                        server::stop(&handle_clone);
                         if let Some(win) = handle_clone.get_webview_window("main") {
                             #[cfg(windows)]
                             {
