@@ -37,8 +37,6 @@
   .btn-secondary:hover:not(:disabled) { background: #6c7086; }
   .btn-save { background: #89b4fa; color: #1e1e2e; font-weight: 600; }
   .btn-save:hover:not(:disabled) { background: #74c7ec; }
-  .btn-clear { background: #f38ba8; color: #1e1e2e; font-weight: 600; }
-  .btn-clear:hover:not(:disabled) { background: #eba0ac; }
   .btn-cancel { background: #45475a; color: #cdd6f4; }
   .btn-cancel:hover:not(:disabled) { background: #585b70; }
 </style>
@@ -62,7 +60,6 @@
   </div>
 
   <div class="buttons">
-    <button class="btn-clear" id="btn-clear-server">Clear Server</button>
     <button class="btn-cancel" id="btn-cancel">Cancel</button>
     <button class="btn-save" id="btn-save">Save</button>
   </div>
@@ -118,11 +115,6 @@
     await invoke('set_server_command', { command: command || null });
 
     invoke('close_settings_window');
-  });
-
-  document.getElementById('btn-clear-server').addEventListener('click', async () => {
-    cmdInput.value = '';
-    await invoke('set_server_command', { command: null });
   });
 
   document.getElementById('btn-cancel').addEventListener('click', () => {
