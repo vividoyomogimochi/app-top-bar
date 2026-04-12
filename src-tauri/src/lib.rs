@@ -15,6 +15,11 @@ fn get_url(state: tauri::State<'_, ConfigState>) -> String {
 }
 
 #[tauri::command]
+fn get_default_url() -> String {
+    config::AppConfig::default().url
+}
+
+#[tauri::command]
 fn set_url(app: tauri::AppHandle, state: tauri::State<'_, ConfigState>, url: String) {
     {
         let mut cfg = state.0.lock().unwrap();
@@ -179,6 +184,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             get_url,
+            get_default_url,
             set_url,
             close_settings_window,
             get_server_command,

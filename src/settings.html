@@ -17,6 +17,7 @@
   .field { margin-bottom: 14px; }
   .input-row { display: flex; gap: 6px; }
   .input-row > input { flex: 1; }
+  .field-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
   input[type="url"], input[type="text"] {
     width: 100%; padding: 8px 10px; border: 1px solid #45475a;
     border-radius: 6px; background: #313244; color: #cdd6f4;
@@ -44,11 +45,12 @@
 <body>
   <div class="field">
     <label for="url-input">URL</label>
-    <div class="input-row">
-      <input type="url" id="url-input" placeholder="https://example.com/" spellcheck="false">
+    <input type="url" id="url-input" placeholder="https://example.com/" spellcheck="false">
+    <div class="error" id="url-error">Please enter a valid URL.</div>
+    <div class="field-actions">
+      <button class="btn-secondary" id="btn-reset-url" title="Reset URL to default (not applied until Save)">Reset</button>
       <button class="btn-secondary" id="btn-open-config" title="Open ticker config page in browser" disabled>Configure</button>
     </div>
-    <div class="error" id="url-error">Please enter a valid URL.</div>
   </div>
 
   <div class="field">
@@ -96,6 +98,14 @@
     const value = urlInput.value.trim();
     if (!value.startsWith(TICKER_PREFIX)) return;
     invoke('open_ticker_config', { url: value });
+  });
+
+  document.getElementById('btn-reset-url').addEventListener('click', async () => {
+    const defaultUrl = await invoke('get_default_url');
+    urlInput.value = defaultUrl;
+    urlError.style.display = 'none';
+    updateOpenConfigState();
+    urlInput.focus();
   });
 
   document.getElementById('btn-browse').addEventListener('click', async () => {
