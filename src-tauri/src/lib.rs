@@ -73,8 +73,42 @@ fn close_server_settings_window(app: tauri::AppHandle) {
     }
 }
 
-const SCROLLBAR_HIDE_SCRIPT: &str = r#"
+#[tauri::command]
+async fn proxy_fetch(url: String) -> Result<String, String> {
+    let parsed: url::Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
+    let scheme = parsed.scheme();
+    if scheme != "http" && scheme != "https" {
+        return Err("Only http/https URLs are allowed".into());
+    }
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(parsed.as_str())
+        .header("User-Agent", "led-news-ticker/1.0")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+
+    let ct = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_lowercase();
+    if !ct.contains("xml") && !ct.contains("rss") && !ct.contains("atom") && !ct.contains("text/plain") {
+        return Err("Unsupported content type".into());
+    }
+
+    resp.text().await.map_err(|e| e.to_string())
+}
+
+const INIT_SCRIPT: &str = r#"
 (function() {
+    // Hide scrollbars
     const style = document.createElement('style');
     style.textContent = `
         ::-webkit-scrollbar { display: none !important; }
@@ -85,6 +119,24 @@ const SCROLLBAR_HIDE_SCRIPT: &str = r#"
         }
     `;
     (document.head || document.documentElement).appendChild(style);
+
+    // Intercept /proxy?url= requests and route through Tauri IPC
+    const originalFetch = window.fetch;
+    window.fetch = function(input, init) {
+        const url = (typeof input === 'string') ? input : (input instanceof Request ? input.url : String(input));
+        const match = url.match(/\/proxy\?url=(.+)/);
+        if (match) {
+            const targetUrl = decodeURIComponent(match[1]);
+            return window.__TAURI_INTERNALS__.invoke('proxy_fetch', { url: targetUrl })
+                .then(function(text) {
+                    return new Response(text, {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/xml' },
+                    });
+                });
+        }
+        return originalFetch.call(this, input, init);
+    };
 })();
 "#;
 
@@ -110,6 +162,7 @@ pub fn run() {
             set_server_command,
             browse_server_command,
             close_server_settings_window,
+            proxy_fetch,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -129,7 +182,7 @@ pub fn run() {
                 "main",
                 WebviewUrl::External(external_url),
             )
-            .initialization_script(SCROLLBAR_HIDE_SCRIPT)
+            .initialization_script(INIT_SCRIPT)
             .title("LED AppBar")
             .inner_size(1920.0, config.bar_height as f64)
             .position(0.0, 0.0)

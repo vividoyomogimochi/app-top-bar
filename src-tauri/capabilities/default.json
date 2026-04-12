@@ -3,6 +3,9 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": ["main"],
+  "remote": {
+    "urls": ["https://ticker.samoyed.moe/*"]
+  },
   "permissions": [
     "core:default",
     "opener:default"
