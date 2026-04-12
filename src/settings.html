@@ -9,14 +9,12 @@
   body {
     font-family: "Segoe UI", system-ui, sans-serif;
     background: #1e1e2e; color: #cdd6f4;
-    padding: 16px; display: flex; flex-direction: column; height: 100vh;
+    padding: 16px; display: flex; flex-direction: column; min-height: 100vh;
   }
   label {
     font-size: 13px; margin-bottom: 6px; display: block;
   }
   .field { margin-bottom: 14px; }
-  .input-row { display: flex; gap: 6px; }
-  .input-row > input { flex: 1; }
   .field-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
   input[type="url"], input[type="text"] {
     width: 100%; padding: 8px 10px; border: 1px solid #45475a;
@@ -26,7 +24,7 @@
   input[type="url"]:focus, input[type="text"]:focus { border-color: #89b4fa; }
   .error { color: #f38ba8; font-size: 12px; margin-top: 4px; display: none; }
   .buttons {
-    margin-top: auto; display: flex; gap: 8px;
+    margin-top: 8px; display: flex; gap: 8px;
     justify-content: flex-end; flex-wrap: wrap;
   }
   button {
@@ -55,8 +53,8 @@
 
   <div class="field">
     <label for="cmd-input">Server executable path</label>
-    <div class="input-row">
-      <input type="text" id="cmd-input" placeholder="C:\path\to\server.exe" spellcheck="false">
+    <input type="text" id="cmd-input" placeholder="C:\path\to\server.exe" spellcheck="false">
+    <div class="field-actions">
       <button class="btn-secondary" id="btn-browse">Browse</button>
     </div>
   </div>
