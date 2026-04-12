@@ -4,7 +4,7 @@
   "description": "Capability for the main window",
   "windows": ["main"],
   "remote": {
-    "urls": ["https://ticker.samoyed.moe/*"]
+    "urls": ["https://*/*", "http://*/*"]
   },
   "permissions": [
     "core:default",
