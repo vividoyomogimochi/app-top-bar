@@ -11,56 +11,131 @@
     background: #1e1e2e; color: #cdd6f4;
     padding: 16px; display: flex; flex-direction: column; height: 100vh;
   }
-  label { font-size: 13px; margin-bottom: 6px; display: block; }
-  input[type="url"] {
+  label {
+    font-size: 13px; margin-bottom: 6px; display: block;
+  }
+  .field { margin-bottom: 14px; }
+  .input-row { display: flex; gap: 6px; }
+  .input-row > input { flex: 1; }
+  input[type="url"], input[type="text"] {
     width: 100%; padding: 8px 10px; border: 1px solid #45475a;
     border-radius: 6px; background: #313244; color: #cdd6f4;
     font-size: 13px; outline: none;
   }
-  input[type="url"]:focus { border-color: #89b4fa; }
-  .buttons { margin-top: auto; display: flex; gap: 8px; justify-content: flex-end; }
+  input[type="url"]:focus, input[type="text"]:focus { border-color: #89b4fa; }
+  .error { color: #f38ba8; font-size: 12px; margin-top: 4px; display: none; }
+  .buttons {
+    margin-top: auto; display: flex; gap: 8px;
+    justify-content: flex-end; flex-wrap: wrap;
+  }
   button {
-    padding: 6px 18px; border: none; border-radius: 6px;
+    padding: 6px 14px; border: none; border-radius: 6px;
     font-size: 13px; cursor: pointer;
   }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-secondary { background: #585b70; color: #cdd6f4; padding: 6px 12px; }
+  .btn-secondary:hover:not(:disabled) { background: #6c7086; }
   .btn-save { background: #89b4fa; color: #1e1e2e; font-weight: 600; }
-  .btn-save:hover { background: #74c7ec; }
+  .btn-save:hover:not(:disabled) { background: #74c7ec; }
+  .btn-clear { background: #f38ba8; color: #1e1e2e; font-weight: 600; }
+  .btn-clear:hover:not(:disabled) { background: #eba0ac; }
   .btn-cancel { background: #45475a; color: #cdd6f4; }
-  .btn-cancel:hover { background: #585b70; }
-  .error { color: #f38ba8; font-size: 12px; margin-top: 4px; display: none; }
+  .btn-cancel:hover:not(:disabled) { background: #585b70; }
 </style>
 </head>
 <body>
-  <label for="url-input">URL</label>
-  <input type="url" id="url-input" placeholder="https://example.com/" spellcheck="false">
-  <div class="error" id="error-msg">Please enter a valid URL.</div>
+  <div class="field">
+    <label for="url-input">URL</label>
+    <div class="input-row">
+      <input type="url" id="url-input" placeholder="https://example.com/" spellcheck="false">
+      <button class="btn-secondary" id="btn-open-config" title="Open ticker config page in browser" disabled>Configure</button>
+    </div>
+    <div class="error" id="url-error">Please enter a valid URL.</div>
+  </div>
+
+  <div class="field">
+    <label for="cmd-input">Server executable path</label>
+    <div class="input-row">
+      <input type="text" id="cmd-input" placeholder="C:\path\to\server.exe" spellcheck="false">
+      <button class="btn-secondary" id="btn-browse">Browse</button>
+    </div>
+  </div>
+
   <div class="buttons">
+    <button class="btn-clear" id="btn-clear-server">Clear Server</button>
     <button class="btn-cancel" id="btn-cancel">Cancel</button>
     <button class="btn-save" id="btn-save">Save</button>
   </div>
+
 <script>
   const invoke = window.__TAURI_INTERNALS__.invoke;
   const urlInput = document.getElementById('url-input');
-  const errorMsg = document.getElementById('error-msg');
+  const urlError = document.getElementById('url-error');
+  const cmdInput = document.getElementById('cmd-input');
+  const btnOpenConfig = document.getElementById('btn-open-config');
 
-  invoke('get_url').then(url => { urlInput.value = url; });
+  const TICKER_PREFIX = 'https://ticker.samoyed.moe/ticker/';
+
+  function updateOpenConfigState() {
+    const value = urlInput.value.trim();
+    btnOpenConfig.disabled = !value.startsWith(TICKER_PREFIX);
+  }
+
+  invoke('get_url').then(url => {
+    urlInput.value = url || '';
+    updateOpenConfigState();
+  });
+
+  invoke('get_server_command').then(cmd => {
+    if (cmd) cmdInput.value = cmd;
+  });
+
+  urlInput.addEventListener('input', () => {
+    urlError.style.display = 'none';
+    updateOpenConfigState();
+  });
+
+  btnOpenConfig.addEventListener('click', () => {
+    const value = urlInput.value.trim();
+    if (!value.startsWith(TICKER_PREFIX)) return;
+    invoke('open_ticker_config', { url: value });
+  });
+
+  document.getElementById('btn-browse').addEventListener('click', async () => {
+    const path = await invoke('browse_server_command');
+    if (path) cmdInput.value = path;
+  });
 
   document.getElementById('btn-save').addEventListener('click', async () => {
     const url = urlInput.value.trim();
-    if (!url) { errorMsg.style.display = 'block'; return; }
-    try { new URL(url); } catch { errorMsg.style.display = 'block'; return; }
-    errorMsg.style.display = 'none';
+    if (!url) { urlError.style.display = 'block'; return; }
+    try { new URL(url); } catch { urlError.style.display = 'block'; return; }
+    urlError.style.display = 'none';
+
     await invoke('set_url', { url });
+
+    const command = cmdInput.value.trim();
+    await invoke('set_server_command', { command: command || null });
+
     invoke('close_settings_window');
+  });
+
+  document.getElementById('btn-clear-server').addEventListener('click', async () => {
+    cmdInput.value = '';
+    await invoke('set_server_command', { command: null });
   });
 
   document.getElementById('btn-cancel').addEventListener('click', () => {
     invoke('close_settings_window');
   });
 
-  urlInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') document.getElementById('btn-save').click();
-    if (e.key === 'Escape') document.getElementById('btn-cancel').click();
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+      document.getElementById('btn-save').click();
+    }
+    if (e.key === 'Escape') {
+      document.getElementById('btn-cancel').click();
+    }
   });
 </script>
 </body>

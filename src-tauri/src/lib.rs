@@ -67,10 +67,32 @@ async fn browse_server_command(app: tauri::AppHandle) -> Option<String> {
 }
 
 #[tauri::command]
-fn close_server_settings_window(app: tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("server-settings") {
-        let _ = window.close();
+fn open_ticker_config(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    const TICKER_PREFIX: &str = "https://ticker.samoyed.moe/ticker/";
+    if !url.starts_with(TICKER_PREFIX) {
+        return Err("URL is not a ticker URL".into());
     }
+
+    let parsed: url::Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
+    let mut target: url::Url = "https://ticker.samoyed.moe/config/"
+        .parse()
+        .map_err(|e: url::ParseError| e.to_string())?;
+
+    {
+        let mut pairs = target.query_pairs_mut();
+        for (k, v) in parsed.query_pairs() {
+            if k != "mode" {
+                pairs.append_pair(&k, &v);
+            }
+        }
+        pairs.append_pair("mode", "ticker");
+    }
+
+    app.opener()
+        .open_url(target.as_str(), None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -154,6 +176,7 @@ pub fn run() {
             None,
         ))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             get_url,
             set_url,
@@ -161,7 +184,7 @@ pub fn run() {
             get_server_command,
             set_server_command,
             browse_server_command,
-            close_server_settings_window,
+            open_ticker_config,
             proxy_fetch,
         ])
         .setup(|app| {

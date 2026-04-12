@@ -48,7 +48,7 @@ fn open_settings_window(app: &AppHandle, label: &str, html: &str, title: &str) {
         WebviewUrl::App(html.into()),
     )
     .title(title)
-    .inner_size(420.0, 130.0)
+    .inner_size(460.0, 260.0)
     .resizable(false)
     .minimizable(false)
     .maximizable(false)
@@ -122,13 +122,12 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         None::<&str>,
     )?;
 
-    let set_url_item = MenuItem::with_id(app, "set_url", "Set URL...", true, None::<&str>)?;
-    let set_server_item = MenuItem::with_id(app, "set_server", "Set Server...", true, None::<&str>)?;
+    let settings_item = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
     let menu = Menu::with_items(
         app,
-        &[&monitor_sub, &height_sub, &autostart_item, &auto_hide_item, &set_url_item, &set_server_item, &quit_item],
+        &[&monitor_sub, &height_sub, &autostart_item, &auto_hide_item, &settings_item, &quit_item],
     )?;
 
     // Store item references for later check-state updates
@@ -164,13 +163,8 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                 return;
             }
 
-            if id == "set_url" {
-                open_settings_window(app, "settings", "settings.html", "Set URL");
-                return;
-            }
-
-            if id == "set_server" {
-                open_settings_window(app, "server-settings", "server-settings.html", "Set Server");
+            if id == "settings" {
+                open_settings_window(app, "settings", "settings.html", "Settings");
                 return;
             }
 
